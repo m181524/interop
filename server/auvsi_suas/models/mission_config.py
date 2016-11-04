@@ -121,16 +121,18 @@ class MissionConfig(models.Model):
 
         waypoints = self.mission_waypoints.order_by('order')
 
-        best = {"satisfied": 0, "satisfied_track": 0}
-        current = {"satisfied": 0, "satisfied_track": 0}
+        best = {i: 0.0 for i in range(0, len(waypoints))}
+        current = {i: 0.0 for i in range(0, len(waypoints))}
         closest = {}
+
+        def score_waypoint(distance):
+            return max(0,
+                float(settings.SATISFIED_WAYPOINT_DIST_MAX_FT - distance) /
+                settings.SATISFIED_WAYPOINT_DIST_MAX_FT)
 
         def best_run(prev_best, current):
             """Returns the best of the current run and the previous best."""
-            if current["satisfied"] > prev_best["satisfied"]:
-                return current
-            elif current["satisfied"] == prev_best["satisfied"] and \
-                    current["satisfied_track"] > prev_best["satisfied_track"]:
+            if sum(current.values()) > sum(prev_best.values()):
                 return current
             return prev_best
 
@@ -145,7 +147,7 @@ class MissionConfig(models.Model):
                 best = best_run(best, current)
 
                 # The check below will set satisfied and satisfied_track to 1.
-                current = {"satisfied": 0, "satisfied_track": 0}
+                current = {i: 0.0 for i in range(0, len(waypoints))}
                 prev_wpt, curr_wpt = -1, 0
                 track_ok = True
 
@@ -157,45 +159,25 @@ class MissionConfig(models.Model):
                     prev_wpt].position)
                 if dp < closest[prev_wpt]:
                     closest[prev_wpt] = dp
+                    current[prev_wpt] = score_waypoint(dp)
 
             # If the UAS has satisfied all of the waypoints, await starting the
             # waypoint pattern again.
             if curr_wpt >= len(waypoints):
                 continue
 
-            # Once we have passed the first waypoint, ensure that the UAS
-            # remains along the waypoint track. We can skip this once they
-            # fail (until the entire pattern is restarted).
-            if prev_wpt >= 0 and track_ok:
-                start = (waypoints[prev_wpt].position.gps_position.latitude,
-                         waypoints[prev_wpt].position.gps_position.longitude,
-                         waypoints[prev_wpt].position.altitude_msl)
-                end = (waypoints[curr_wpt].position.gps_position.latitude,
-                       waypoints[curr_wpt].position.gps_position.longitude,
-                       waypoints[curr_wpt].position.altitude_msl)
-                point = (uas_log.uas_position.gps_position.latitude,
-                         uas_log.uas_position.gps_position.longitude,
-                         uas_log.uas_position.altitude_msl)
-                d = distance.distance_to_line(start, end, point, utm)
-                if d > settings.WAYPOINT_TRACK_DIST_MAX_FT:
-                    track_ok = False
-
-            waypoint = waypoints[curr_wpt]
-            d = uas_log.uas_position.distance_to(waypoint.position)
-
+            d = uas_log.uas_position.distance_to(waypoints[curr_wpt].position)
             if curr_wpt not in closest or d < closest[curr_wpt]:
                 closest[curr_wpt] = d
 
             if d < settings.SATISFIED_WAYPOINT_DIST_MAX_FT:
-                current["satisfied"] += 1
-                if track_ok:
-                    current["satisfied_track"] += 1
+                current[curr_wpt] = score_waypoint(d)
                 curr_wpt += 1
                 prev_wpt += 1
 
         best = best_run(best, current)
 
-        return best["satisfied"], best["satisfied_track"], closest
+        return best, closest
 
     def evaluate_teams(self, users=None):
         """Evaluates the teams (non admin users) of the competition.
@@ -271,11 +253,10 @@ class MissionConfig(models.Model):
                 warnings.append('No UAS telemetry logs.')
 
             # Determine if the uas hit the waypoints.
-            waypoints_hit, waypoints_hit_track, waypoints_closest = \
+            waypoint_scores, waypoint_accuracies = \
                 self.satisfied_waypoints(uas_logs)
-            eval_data['waypoints_satisfied'] = waypoints_hit
-            eval_data['waypoints_satisfied_track'] = waypoints_hit_track
-            eval_data['waypoints_closest'] = waypoints_closest
+            eval_data['waypoint_scores'] = waypoint_scores
+            eval_data['waypoint_accuracies'] = waypoint_accuracies
 
             # Determine if the uas went out of bounds. This must be done for
             # each period individually so time between periods isn't counted as

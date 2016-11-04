@@ -107,38 +107,33 @@ class TestMissionConfigModel(TestCase):
         user = User.objects.create_user('testuser', 'testemail@x.com',
                                         'testpass')
 
+        def assertDictionaryEqual(expect, got):
+            for k in expect.keys():
+                self.assertIn(k, got)
+                self.assertAlmostEqual(expect[k], got[k], delta=0.1)
+            for k in got.keys():
+                self.assertIn(k, expect)
+
         def assertSatisfiedWaypoints(expect, got):
             """Assert two satisfied_waypoints return values are equal."""
-            self.assertEqual(expect[0], got[0])
-            self.assertEqual(expect[1], got[1])
-            for k in expect[2].keys():
-                self.assertIn(k, got[2])
-                self.assertAlmostEqual(expect[2][k], got[2][k], delta=0.1)
-            for k in got[2].keys():
-                self.assertIn(k, expect[2])
+            assertDictionaryEqual(expect[0], got[0])
+            assertDictionaryEqual(expect[1], got[1])
 
         # Only first is valid.
         entries = [(38, -76, 140), (40, -78, 600), (37, -75, 40)]
-        expect = (1, 1, {0: 40, 1: 460785.17})
+        expect = ({0: 0.6, 1: 0.0, 2: 0.0}, {0: 40, 1: 460785.17})
         logs = self.create_uas_logs(user, entries)
         assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
 
         # First and last are valid, but missed second, so third doesn't count.
         entries = [(38, -76, 140), (40, -78, 600), (40, -78, 40)]
-        expect = (1, 1, {0: 40, 1: 460785.03})
+        expect = ({0: 0.6, 1: 0.0, 2: 0.0}, {0: 40, 1: 460785.03})
         logs = self.create_uas_logs(user, entries)
         assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
 
         # Hit all.
         entries = [(38, -76, 140), (39, -77, 180), (40, -78, 40)]
-        expect = (3, 3, {0: 40, 1: 20, 2: 40})
-        logs = self.create_uas_logs(user, entries)
-        assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
-
-        # Hit all, but don't stay within waypoint track.
-        entries = [(38, -76, 140), (39, -77, 180), (41, -78, 40),
-                   (40, -78, 40)]
-        expect = (3, 2, {0: 40, 1: 20, 2: 40})
+        expect = ({0: 0.6, 1: 0.8, 2: 0.6}, {0: 40, 1: 20, 2: 40})
         logs = self.create_uas_logs(user, entries)
         assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
 
@@ -150,7 +145,7 @@ class TestMissionConfigModel(TestCase):
                    (38, -76, 140),
                    (39, -77, 180),
                    (40, -78, 40)]
-        expect = (3, 3, {0: 40, 1: 20, 2: 40})
+        expect = ({0: 0.6, 1: 0.8, 2: 0.6}, {0: 40, 1: 20, 2: 40})
         logs = self.create_uas_logs(user, entries)
         assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
 
@@ -162,33 +157,38 @@ class TestMissionConfigModel(TestCase):
                    (38, -76, 140),
                    (40, -78, 600),
                    (37, -75, 40)]
-        expect = (3, 3, {0: 40, 1: 20, 2: 40})
-        logs = self.create_uas_logs(user, entries)
-        assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
-
-        # Remain on the waypoint track only on the second run.
-        entries = [(38, -76, 140),
-                   (39, -77, 180),
-                   (41, -78, 40),
-                   (40, -78, 40),
-                   # Run two:
-                   (38, -76, 140),
-                   (39, -77, 180),
-                   (40, -78, 40)]
-        expect = (3, 3, {0: 40, 1: 20, 2: 40})
+        expect = ({0: 0.6, 1: 0.8, 2: 0.6}, {0: 40, 1: 20, 2: 40})
         logs = self.create_uas_logs(user, entries)
         assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
 
         # Keep flying after hitting all waypoints.
         entries = [(38, -76, 140), (39, -77, 180), (40, -78, 40),
                    (30.1, -78.1, 100)]
-        expect = (3, 3, {0: 40, 1: 20, 2: 40})
+        expect = ({0: 0.6, 1: 0.8, 2: 0.6}, {0: 40, 1: 20, 2: 40})
         logs = self.create_uas_logs(user, entries)
         assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
 
-        # Miss last target by a sane distance.
-        entries = [(38, -76, 140), (39, -77, 180), (40, -78, 60)]
-        expect = (2, 2, {0: 40, 1: 20, 2: 60})
+        # Hit all in first run, but second is higher scoring.
+        entries = [(38, -76, 140),
+                   (39, -77, 180),
+                   (40, -78, 60),
+                   # Run two:
+                   (38, -76, 100),
+                   (39, -77, 200),
+                   (40, -78, 110)]
+        expect = ({0: 1, 1: 1, 2: 0}, {0: 0, 1: 0, 2: 60})
+        logs = self.create_uas_logs(user, entries)
+        assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
+
+        # Restart waypoint path in the middle.
+        waypoints = [(38, -76, 100), (39, -77, 200), (40, -78, 0)]
+        entries = [(38, -76, 140),
+                   (39, -77, 180),
+                   # Restart:
+                   (38, -76, 70),
+                   (39, -77, 150),
+                   (40, -78, 10)]
+        expect = ({0: 0.7, 1: 0.5, 2: 0.9}, {0: 30, 1: 20, 2: 10})
         logs = self.create_uas_logs(user, entries)
         assertSatisfiedWaypoints(expect, config.satisfied_waypoints(logs))
 
@@ -210,8 +210,8 @@ class TestMissionConfigModelSampleMission(TestCase):
 
         # Verify dictionary structure
         for user, val in teams.iteritems():
-            self.assertIn('waypoints_satisfied', val)
-            self.assertIn('waypoints_satisfied_track', val)
+            self.assertIn('waypoint_scores', val)
+            self.assertIn('waypoint_accuracies', val)
 
             self.assertIn('mission_clock_time', val)
             self.assertIn('out_of_bounds_time', val)
@@ -242,8 +242,8 @@ class TestMissionConfigModelSampleMission(TestCase):
             self.assertIn(26, val['moving_obst_collision'])
 
         # user0 data
-        self.assertEqual(1, teams[user0]['waypoints_satisfied'])
-        self.assertEqual(1, teams[user0]['waypoints_satisfied_track'])
+        self.assertEqual({0: 1.0, 1: 0.0}, teams[user0]['waypoint_scores'])
+        self.assertEqual({0: 0.0}, teams[user0]['waypoint_accuracies'])
 
         self.assertAlmostEqual(2, teams[user0]['mission_clock_time'])
         self.assertAlmostEqual(0.6, teams[user0]['out_of_bounds_time'])
@@ -278,8 +278,8 @@ class TestMissionConfigModelSampleMission(TestCase):
         self.assertEqual(False, teams[user0]['moving_obst_collision'][26])
 
         # user1 data
-        self.assertEqual(2, teams[user1]['waypoints_satisfied'])
-        self.assertEqual(1, teams[user0]['waypoints_satisfied_track'])
+        self.assertEqual({0: 1.0, 1: 1.0}, teams[user1]['waypoint_scores'])
+        self.assertEqual({0: 0.0, 1: 0.0}, teams[user1]['waypoint_accuracies'])
 
         self.assertAlmostEqual(18, teams[user1]['mission_clock_time'])
         self.assertAlmostEqual(1.0, teams[user1]['out_of_bounds_time'])

@@ -200,10 +200,7 @@ TEST_LOADTEST_TIME = 2.0
 TEST_LOADTEST_INTEROP_MIN_RATE = 1.5 * 10.0 * 4
 
 # The max distance for a waypoint to be considered satisfied.
-SATISFIED_WAYPOINT_DIST_MAX_FT = 50
-
-# The max distance for a UAS to diverge from the waypoint track.
-WAYPOINT_TRACK_DIST_MAX_FT = 100
+SATISFIED_WAYPOINT_DIST_MAX_FT = 100
 
 # The lowest allowed location accuracy (in feet)
 TARGET_LOCATION_THRESHOLD = 150
