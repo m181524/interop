@@ -211,7 +211,7 @@ class TestMissionConfigModelSampleMission(TestCase):
         # Verify dictionary structure
         for user, val in teams.iteritems():
             self.assertIn('waypoint_scores', val)
-            self.assertIn('waypoint_accuracies', val)
+            self.assertIn('waypoint_closest_approaches', val)
 
             self.assertIn('mission_clock_time', val)
             self.assertIn('out_of_bounds_time', val)
@@ -243,7 +243,7 @@ class TestMissionConfigModelSampleMission(TestCase):
 
         # user0 data
         self.assertEqual({0: 1.0, 1: 0.0}, teams[user0]['waypoint_scores'])
-        self.assertEqual({0: 0.0}, teams[user0]['waypoint_accuracies'])
+        self.assertEqual({0: 0.0}, teams[user0]['waypoint_closest_approaches'])
 
         self.assertAlmostEqual(2, teams[user0]['mission_clock_time'])
         self.assertAlmostEqual(0.6, teams[user0]['out_of_bounds_time'])
@@ -279,7 +279,8 @@ class TestMissionConfigModelSampleMission(TestCase):
 
         # user1 data
         self.assertEqual({0: 1.0, 1: 1.0}, teams[user1]['waypoint_scores'])
-        self.assertEqual({0: 0.0, 1: 0.0}, teams[user1]['waypoint_accuracies'])
+        self.assertEqual({0: 0.0,
+                          1: 0.0}, teams[user1]['waypoint_closest_approaches'])
 
         self.assertAlmostEqual(18, teams[user1]['mission_clock_time'])
         self.assertAlmostEqual(1.0, teams[user1]['out_of_bounds_time'])

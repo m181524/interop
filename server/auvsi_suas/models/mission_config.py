@@ -126,8 +126,8 @@ class MissionConfig(models.Model):
         closest = {}
 
         def score_waypoint(distance):
-            return max(0,
-                float(settings.SATISFIED_WAYPOINT_DIST_MAX_FT - distance) /
+            return max(
+                0, float(settings.SATISFIED_WAYPOINT_DIST_MAX_FT - distance) /
                 settings.SATISFIED_WAYPOINT_DIST_MAX_FT)
 
         def best_run(prev_best, current):
@@ -253,10 +253,10 @@ class MissionConfig(models.Model):
                 warnings.append('No UAS telemetry logs.')
 
             # Determine if the uas hit the waypoints.
-            waypoint_scores, waypoint_accuracies = \
+            waypoint_scores, closest_approaches = \
                 self.satisfied_waypoints(uas_logs)
             eval_data['waypoint_scores'] = waypoint_scores
-            eval_data['waypoint_accuracies'] = waypoint_accuracies
+            eval_data['waypoint_closest_approaches'] = closest_approaches
 
             # Determine if the uas went out of bounds. This must be done for
             # each period individually so time between periods isn't counted as
