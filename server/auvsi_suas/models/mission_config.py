@@ -106,10 +106,10 @@ class MissionConfig(models.Model):
         Args:
             uas_telemetry_logs: A list of UAS Telemetry logs.
         Returns:
-            satisifed: Total number of waypoints hit (must be in order).
-            satisfied_track: Total number of waypoints hit while remaining
-                along the track. Once the UAV leaves the track no
-                more waypoints will count towards this metric.
+            best: Dictionary of distances to waypoints of the highest scoring
+                attempt.
+            scores: Dictionary of individual waypoint scores of the highest
+                scoring attempt.
             closest: Dictionary of closest approach distances to
                 each waypoint.
         """
@@ -121,35 +121,43 @@ class MissionConfig(models.Model):
 
         waypoints = self.mission_waypoints.order_by('order')
 
-        best = {i: 0.0 for i in range(0, len(waypoints))}
-        current = {i: 0.0 for i in range(0, len(waypoints))}
+        best = {}
+        current = {}
         closest = {}
 
         def score_waypoint(distance):
+            """Scores a single waypoint."""
             return max(
                 0, float(settings.SATISFIED_WAYPOINT_DIST_MAX_FT - distance) /
                 settings.SATISFIED_WAYPOINT_DIST_MAX_FT)
 
+        def score_waypoint_sequence(sequence):
+            """Returns scores given distances to a sequence of waypoints."""
+            score = {}
+            for i in range(0, len(waypoints)):
+                score[i] = score_waypoint(sequence[i]) if i in sequence else 0.0
+            return score
+
         def best_run(prev_best, current):
             """Returns the best of the current run and the previous best."""
-            if sum(current.values()) > sum(prev_best.values()):
-                return current
-            return prev_best
+            prev_best_scores = score_waypoint_sequence(prev_best)
+            current_scores = score_waypoint_sequence(current)
+            if sum(current_scores.values()) > sum(prev_best_scores.values()):
+                return current, current_scores
+            return prev_best, prev_best_scores
 
         prev_wpt, curr_wpt = -1, 0
-        track_ok = True
 
         for uas_log in uas_telemetry_logs:
             # At any point the UAV may restart the waypoint pattern, at which
             # point we reset the counters.
             d0 = uas_log.uas_position.distance_to(waypoints[0].position)
             if d0 < settings.SATISFIED_WAYPOINT_DIST_MAX_FT:
-                best = best_run(best, current)
+                best = best_run(best, current)[0]
 
-                # The check below will set satisfied and satisfied_track to 1.
-                current = {i: 0.0 for i in range(0, len(waypoints))}
+                # Reset current to default values.
+                current = {}
                 prev_wpt, curr_wpt = -1, 0
-                track_ok = True
 
             # The UAS may pass closer to the waypoint after achieving the capture
             # threshold. so continue to look for better passes of the previous
@@ -159,7 +167,7 @@ class MissionConfig(models.Model):
                     prev_wpt].position)
                 if dp < closest[prev_wpt]:
                     closest[prev_wpt] = dp
-                    current[prev_wpt] = score_waypoint(dp)
+                    current[prev_wpt] = dp
 
             # If the UAS has satisfied all of the waypoints, await starting the
             # waypoint pattern again.
@@ -171,13 +179,12 @@ class MissionConfig(models.Model):
                 closest[curr_wpt] = d
 
             if d < settings.SATISFIED_WAYPOINT_DIST_MAX_FT:
-                current[curr_wpt] = score_waypoint(d)
+                current[curr_wpt] = d
                 curr_wpt += 1
                 prev_wpt += 1
 
-        best = best_run(best, current)
-
-        return best, closest
+        best, scores = best_run(best, current)
+        return best, scores, closest
 
     def evaluate_teams(self, users=None):
         """Evaluates the teams (non admin users) of the competition.
@@ -253,8 +260,10 @@ class MissionConfig(models.Model):
                 warnings.append('No UAS telemetry logs.')
 
             # Determine if the uas hit the waypoints.
-            waypoint_scores, closest_approaches = \
+            waypoint_closest_for_scores, waypoint_scores, closest_approaches = \
                 self.satisfied_waypoints(uas_logs)
+            eval_data['waypoint_closest_for_scores'] = \
+                waypoint_closest_for_scores
             eval_data['waypoint_scores'] = waypoint_scores
             eval_data['waypoint_closest_approaches'] = closest_approaches
 
